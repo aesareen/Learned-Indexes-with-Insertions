@@ -330,15 +330,61 @@ def sample_train(threshold, use_threshold, distribution, training_percent, path)
     end_time = time.time()
     learn_time = end_time - start_time
     print("Build Learned NN time ", learn_time)
+
+    print("*************start BTree************")
+    bt = BTree(2)
+    print("Start Build")
+    start_time = time.time()
+    bt.build(test_set_x, test_set_y) #! Inserting test data into the B-Tree 
+    end_time = time.time()
+    build_time = end_time - start_time
+    print("Build BTree time ", build_time)
+    print("Calculate error")
+    start_time = time.time()
+    for ind in range(len(test_set_x)): #! Applying requests to learned index -- Run through every index 
+        pre = bt.predict(test_set_x[ind]) #Predict the index 
+        err += abs(pre - test_set_y[ind]) #Calculate the error 
+        if err != 0:
+            flag = 1
+            pos = pre
+            off = 1
+            while pos != test_set_y[ind]: #While the predicted index does not match the actual 
+                pos += flag * off
+                flag = -flag
+                off += 1            
+    end_time = time.time()
+    search_time = (end_time - start_time) / len(test_set_x)
+    print("Search time ", search_time)
+    mean_error = err * 1.0 / len(test_set_x)
+    print("mean error = ", mean_error)
+    print("*************end BTree************")
+
+
+    write_percent=0.1
+    interval = int(1 / write_percent)
+
+
     print("Calculate Error")
     err = 0
+    inserted_num = 0
     start_time = time.time()
     for ind in range(len(test_set_x)):
-        pre1 = trained_index[0][0].predict(test_set_x[ind])
-        if pre1 > stage_set[1] - 1:
-            pre1 = stage_set[1] - 1
-        pre2 = trained_index[1][pre1].predict(test_set_x[ind])
-        err += abs(pre2 - test_set_y[ind])
+        if ind % write_percent != 0:
+            pre1 = trained_index[0][0].predict(test_set_x[ind])
+            if pre1 > stage_set[1] - 1:
+                pre1 = stage_set[1] - 1
+            pre2 = trained_index[1][pre1].predict(test_set_x[ind])
+        else:
+            test_set_y[ind]=TOTAL_NUMBER+inserted_num
+            inserted_num +=1
+            ind -=1
+            pre1 = trained_index[0][0].predict(test_set_x[ind])
+            if pre1 > stage_set[1] - 1:
+                pre1 = stage_set[1] - 1
+            pre2 = trained_index[1][pre1].predict(test_set_x[ind])
+            if pre2 != test_set_y[ind]:
+                res = bt.search(test_set_x[ind])
+
     end_time = time.time()
     search_time = (end_time - start_time) / len(test_set_x)
     print("Search time ", search_time)
