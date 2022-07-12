@@ -130,7 +130,6 @@ class TrainedNN:
         self.b_fc = []
         for i in range(len(self.core_nums) - 1):
             self.w_fc.append(weight_variable([self.core_nums[i], self.core_nums[i + 1]]))
-            import pdb; pdb.set_trace()
             self.b_fc.append(bias_variable([self.core_nums[i + 1]]))
         self.h_fc = [None for i in range(len(self.core_nums))]
         self.h_fc_drop = [None for i in range(len(self.core_nums))]
