@@ -3,6 +3,7 @@ import pandas as pd
 from Trained_NN import TrainedNN, AbstractNN, ParameterPool, set_data_type
 from btree import BTree
 from data.create_data import create_data, Distribution
+from random import sample as rsample
 import time, gc, json
 import os, sys, getopt
 
@@ -153,6 +154,36 @@ def train_index(threshold, use_threshold, distribution, path):
     #     test_set_x.append(data.ix[i, 0])
     #     test_set_y.append(data.ix[i, 1])
 
+     # build BTree index
+    print("*************start BTree************")
+    bt = BTree(2)
+    print("Start Build")
+    start_time = time.time()
+    bt.build(test_set_x, test_set_y) #! Inserting test data into the B-Tree 
+    end_time = time.time()
+    build_time = end_time - start_time
+    print("Build BTree time ", build_time)
+    err = 0
+    print("Calculate error")
+    start_time = time.time()
+    for ind in range(len(test_set_x)): #! Applying requests to learned index -- Run through every index 
+        pre = bt.predict(test_set_x[ind]) #Predict the index 
+        err += abs(pre - test_set_y[ind]) #Calculate the error 
+        if err != 0:
+            flag = 1
+            pos = pre
+            off = 1
+            while pos != test_set_y[ind]: #While the predicted index does not match the actual 
+                pos += flag * off
+                flag = -flag
+                off += 1            
+    end_time = time.time()
+    search_time = (end_time - start_time) / len(test_set_x)
+    print("Search time ", search_time)
+    mean_error = err * 1.0 / len(test_set_x)
+    print("mean error = ", mean_error)
+    print("*************end BTree************")
+
     print("*************start Learned NN************")
     print("Start Train")
     start_time = time.time()
@@ -165,7 +196,39 @@ def train_index(threshold, use_threshold, distribution, path):
     print("Calculate Error")
     err = 0
     start_time = time.time()
-    # calculate error
+    
+    #! Write Percentage Code
+    write_percent = .7
+    keys_needed = int(TOTAL_NUMBER * write_percent)
+    interval = sorted(rsample(range(TOTAL_NUMBER), keys_needed))
+    
+    err = 0
+    inserted_num = 0
+
+    start_time = time.time()
+
+    for ind in range(len(test_set_x)):
+        if ind not in interval:
+            pre1 = trained_index[0][0].predict(test_set_x[ind])
+            if pre1 > stage_set[1] - 1:
+                pre1 = stage_set[1] - 1
+            pre2 = trained_index[1][pre1].predict(test_set_x[ind])
+            err += abs(pre2 - test_set_y[ind])
+        else: #Writes 
+            i += 1
+            test_set_y[ind]=TOTAL_NUMBER+inserted_num #Change predicted index (Start at number, increment by 1)
+            inserted_num +=1
+            ind -=1
+            pre1 = trained_index[0][0].predict(test_set_x[ind])
+            if pre1 > stage_set[1] - 1: #RMI - First Model 
+                pre1 = stage_set[1] - 1
+            pre2 = trained_index[1][pre1].predict(test_set_x[ind])
+            if pre2 != test_set_y[ind]: #Calculate Error 
+                res = bt.predict(test_set_x[ind])
+                err += res
+    print("Number of writes: {i}".format(i=i))
+    '''
+           # calculate error
     for ind in range(len(test_set_x)):
         # pick model in next stage
         pre1 = trained_index[0][0].predict(test_set_x[ind])
@@ -174,6 +237,7 @@ def train_index(threshold, use_threshold, distribution, path):
         # predict position
         pre2 = trained_index[1][pre1].predict(test_set_x[ind])
         err += abs(pre2 - test_set_y[ind])
+    '''
     end_time = time.time()
     search_time = (end_time - start_time) / len(test_set_x)
     print("Search time %f " % search_time)
@@ -215,36 +279,6 @@ def train_index(threshold, use_threshold, distribution, path):
 
     del trained_index
     gc.collect()
-    
-    # build BTree index
-    print("*************start BTree************")
-    bt = BTree(2)
-    print("Start Build")
-    start_time = time.time()
-    bt.build(test_set_x, test_set_y) #! Inserting test data into the B-Tree 
-    end_time = time.time()
-    build_time = end_time - start_time
-    print("Build BTree time ", build_time)
-    err = 0
-    print("Calculate error")
-    start_time = time.time()
-    for ind in range(len(test_set_x)): #! Applying requests to learned index -- Run through every index 
-        pre = bt.predict(test_set_x[ind]) #Predict the index 
-        err += abs(pre - test_set_y[ind]) #Calculate the error 
-        if err != 0:
-            flag = 1
-            pos = pre
-            off = 1
-            while pos != test_set_y[ind]: #While the predicted index does not match the actual 
-                pos += flag * off
-                flag = -flag
-                off += 1            
-    end_time = time.time()
-    search_time = (end_time - start_time) / len(test_set_x)
-    print("Search time ", search_time)
-    mean_error = err * 1.0 / len(test_set_x)
-    print("mean error = ", mean_error)
-    print("*************end BTree************")
 
     # write BTree into files
     result = []
@@ -253,6 +287,7 @@ def train_index(threshold, use_threshold, distribution, path):
         for ni in node.items:
             if ni is None:
                 continue
+            # item = {"key": ni.k, "value": ni.v}
             item = {"key": ni.k.item(), "value": ni.v.item()}
         tmp = {"index": node.index, "isLeaf": node.isLeaf, "children": node.children, "items": item,
                "numberOfkeys": node.numberOfKeys}
@@ -262,7 +297,7 @@ def train_index(threshold, use_threshold, distribution, path):
               "wb") as jsonFile:
         json.dump(result, jsonFile)
 
-    #! write performance into files
+    # write performance into files
     performance_BTree = {"type": "BTree", "build time": build_time, "search time": search_time,
                          "average error": mean_error,
                          "store size": os.path.getsize(
@@ -330,61 +365,6 @@ def sample_train(threshold, use_threshold, distribution, training_percent, path)
     end_time = time.time()
     learn_time = end_time - start_time
     print("Build Learned NN time ", learn_time)
-
-    print("*************start BTree************")
-    bt = BTree(2)
-    print("Start Build")
-    start_time = time.time()
-    bt.build(test_set_x, test_set_y) #! Inserting test data into the B-Tree 
-    end_time = time.time()
-    build_time = end_time - start_time
-    print("Build BTree time ", build_time)
-    print("Calculate error")
-    start_time = time.time()
-    for ind in range(len(test_set_x)): #! Applying requests to learned index -- Run through every index 
-        pre = bt.predict(test_set_x[ind]) #Predict the index 
-        err += abs(pre - test_set_y[ind]) #Calculate the error 
-        if err != 0:
-            flag = 1
-            pos = pre
-            off = 1
-            while pos != test_set_y[ind]: #While the predicted index does not match the actual 
-                pos += flag * off
-                flag = -flag
-                off += 1            
-    end_time = time.time()
-    search_time = (end_time - start_time) / len(test_set_x)
-    print("Search time ", search_time)
-    mean_error = err * 1.0 / len(test_set_x)
-    print("mean error = ", mean_error)
-    print("*************end BTree************")
-
-
-    write_percent=0.1
-    interval = int(1 / write_percent)
-
-
-    print("Calculate Error")
-    err = 0
-    inserted_num = 0
-    start_time = time.time()
-    for ind in range(len(test_set_x)):
-        if ind % write_percent != 0:
-            pre1 = trained_index[0][0].predict(test_set_x[ind])
-            if pre1 > stage_set[1] - 1:
-                pre1 = stage_set[1] - 1
-            pre2 = trained_index[1][pre1].predict(test_set_x[ind])
-        else:
-            test_set_y[ind]=TOTAL_NUMBER+inserted_num
-            inserted_num +=1
-            ind -=1
-            pre1 = trained_index[0][0].predict(test_set_x[ind])
-            if pre1 > stage_set[1] - 1:
-                pre1 = stage_set[1] - 1
-            pre2 = trained_index[1][pre1].predict(test_set_x[ind])
-            if pre2 != test_set_y[ind]:
-                res = bt.search(test_set_x[ind])
-
     end_time = time.time()
     search_time = (end_time - start_time) / len(test_set_x)
     print("Search time ", search_time)
