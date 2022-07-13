@@ -18,7 +18,7 @@ Trained_NN.py: NN structures
 ## HOW TO RUN
 > First, you need to install python2.7.x and package tensorflow, pandas, numpy, enum.   
 Second, use command to run the Learned_BTree.py fule, that is,  
-```python Learned_BTree.py -t <Type> -d <Distribution> [-p|-n] [Percent]|[Number] [-c] [New data] [-h]```.  
+```python Learned_BTree.py -t <Type> -d <Distribution> [-p|-n] [Percent]|[Number] [-c] [New data] [-h] [-w] [Write Percent]```.  
   
 >Parameters:  
 'type': 'Type: sample, full',  
@@ -29,7 +29,7 @@ Second, use command to run the Learned_BTree.py fule, that is,
 'write percent': 'Write Percentage: 0 - 1.0, specify the write percentage in decimal form, default value = 0' 
   
 >Example:  
-```python Learned_BTree.py -t full -d random -n 100000 -c 1```  
+```python Learned_BTree.py -t full -d random -n 100000 -c 1 -w .7```  
   
 
 ## Other Content
