@@ -198,9 +198,8 @@ def train_index(threshold, use_threshold, distribution, path):
     start_time = time.time()
     
     #! Write Percentage Code
-    write_percent = .7
     keys_needed = int(TOTAL_NUMBER * write_percent)
-    interval = sorted(rsample(range(TOTAL_NUMBER), keys_needed))
+    interval = set(rsample(range(TOTAL_NUMBER), keys_needed))
     
     err = 0
     inserted_num = 0
@@ -208,6 +207,8 @@ def train_index(threshold, use_threshold, distribution, path):
     start_time = time.time()
 
     for ind in range(len(test_set_x)):
+        if ind % 100000 == 0:
+            print("Completed index {ind} out of {TN}".format(ind=ind, TN=TOTAL_NUMBER))
         if ind not in interval:
             pre1 = trained_index[0][0].predict(test_set_x[ind])
             if pre1 > stage_set[1] - 1:
@@ -215,18 +216,15 @@ def train_index(threshold, use_threshold, distribution, path):
             pre2 = trained_index[1][pre1].predict(test_set_x[ind])
             err += abs(pre2 - test_set_y[ind])
         else: #Writes 
-            i += 1
             test_set_y[ind]=TOTAL_NUMBER+inserted_num #Change predicted index (Start at number, increment by 1)
             inserted_num +=1
-            ind -=1
             pre1 = trained_index[0][0].predict(test_set_x[ind])
             if pre1 > stage_set[1] - 1: #RMI - First Model 
                 pre1 = stage_set[1] - 1
             pre2 = trained_index[1][pre1].predict(test_set_x[ind])
-            if pre2 != test_set_y[ind]: #Calculate Error 
+            if pre2 != test_set_y[ind]: #Calculate Error - B+ Tree Search 
                 res = bt.predict(test_set_x[ind])
                 err += res
-    print("Number of writes: {i}".format(i=i))
     '''
            # calculate error
     for ind in range(len(test_set_x)):
@@ -409,7 +407,7 @@ def sample_train(threshold, use_threshold, distribution, training_percent, path)
 
 # help message
 def show_help_message(msg):
-    help_message = {'command': 'python Learned_BTree.py -t <Type> -d <Distribution> [-p|-n] [Percent]|[Number] [-c] [New data] [-h]',
+    help_message = {'command': 'python Learned_BTree.py -t <Type> -d <Distribution> [-p|-n] [Percent]|[Number] [-c] [New data] [-h] [-w] [Write Percent]',
                     'type': 'Type: sample, full',
                     'distribution': 'Distribution: random, exponential',
                     'percent': 'Percent: 0.1-1.0, default value = 0.5; sample train data size = 300,000',
@@ -418,8 +416,9 @@ def show_help_message(msg):
                     'fpError': 'Percent cannot be assigned in full train.',
                     'snError': 'Number cannot be assigned in sample train.',
                     'noTypeError': 'Please choose the type first.',
-                    'noDistributionError': 'Please choose the distribution first.'}
-    help_message_key = ['command', 'type', 'distribution', 'percent', 'number', 'new data']
+                    'noDistributionError': 'Please choose the distribution first.',
+                    "writeError": "Please enter a proper write percentage between 0-100% in decimal form (i.e. .1, .4)"}
+    help_message_key = ['command', 'type', 'distribution', 'percent', 'number', 'new data', "writeError"]
     if msg == 'all':
         for k in help_message_key:
             print(help_message[k])
@@ -430,6 +429,7 @@ def show_help_message(msg):
 
 # command line
 def main(argv):
+    global write_percent
     distribution = None
     per = 0.5
     num = 300000
@@ -437,8 +437,9 @@ def main(argv):
     is_type = False
     is_distribution = False
     do_create = True
+    write_percent = 0
     try:
-        opts, args = getopt.getopt(argv, "hd:t:p:n:c:")
+        opts, args = getopt.getopt(argv, "hd:t:p:n:c:w:")
     except getopt.GetoptError:
         show_help_message('command')
         sys.exit(2)
@@ -447,6 +448,7 @@ def main(argv):
         if opt == '-h':
             show_help_message('all')
             return
+        
         elif opt == '-t':
             if arg == "sample":
                 is_sample = True
@@ -457,6 +459,7 @@ def main(argv):
             else:
                 show_help_message('type')
                 return
+        
         elif opt == '-d':
             if not is_type:
                 show_help_message('noTypeError')
@@ -471,6 +474,7 @@ def main(argv):
             else:
                 show_help_message('distribution')
                 return
+        
         elif opt == '-p':
             if not is_type:
                 show_help_message('noTypeError')
@@ -482,7 +486,7 @@ def main(argv):
             if not 0.1 <= per <= 1.0:
                 show_help_message('percent')
                 return
-
+        
         elif opt == '-n':
             if not is_type:
                 show_help_message('noTypeError')
@@ -504,6 +508,15 @@ def main(argv):
                 return
             do_create = not (int(arg) == 0)
 
+        elif opt == '-w':
+            if not is_type:
+                show_help_message('noTypeError')
+                return
+            if not 0 < float(arg) < 1:
+                show_help_message("writeError") 
+                return
+            write_percent = float(arg)
+                
         else:
             print("Unknown parameters, please use -h for instructions.")
             return
