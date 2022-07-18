@@ -518,7 +518,7 @@ def main(argv):
             if not is_type:
                 show_help_message('noTypeError')
                 return
-            if not 0 < float(arg) <= 1:
+            if not 0 <= float(arg) <= 1:
                 show_help_message("writeError") 
                 return
             write_percent = float(arg)
