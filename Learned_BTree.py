@@ -6,6 +6,8 @@ from data.create_data import create_data, Distribution
 from random import sample as rsample
 import time, gc, json
 import os, sys, getopt
+import threading
+
 
 # Setting 
 BLOCK_SIZE = 100
@@ -369,6 +371,8 @@ def sample_train(threshold, use_threshold, distribution, training_percent, path)
     mean_error = err * 1.0 / len(test_set_x)
     print("mean error = ", mean_error)
     print("*************end Learned NN************\n\n")
+    
+    #! Copy results into JSON code
     result_stage1 = {0: {"weights": trained_index[0][0].weights, "bias": trained_index[0][0].bias}}
     result_stage2 = {}
     for ind in range(len(trained_index[1])):
@@ -438,6 +442,7 @@ def main(argv):
     is_distribution = False
     do_create = True
     write_percent = 0
+    
     try:
         opts, args = getopt.getopt(argv, "hd:t:p:n:c:w:")
     except getopt.GetoptError:
@@ -445,6 +450,7 @@ def main(argv):
         sys.exit(2)
     for opt, arg in opts:
         arg = str(arg).lower()
+        
         if opt == '-h':
             show_help_message('all')
             return
@@ -512,7 +518,7 @@ def main(argv):
             if not is_type:
                 show_help_message('noTypeError')
                 return
-            if not 0 < float(arg) < 1:
+            if not 0 < float(arg) <= 1:
                 show_help_message("writeError") 
                 return
             write_percent = float(arg)
