@@ -310,10 +310,8 @@ def train_index(threshold, use_threshold, distribution, path):
                 pre1 = stage_set[1] - 1
             pre2 = trained_index[1][pre1].predict(test_set_x[ind])
             if pre2 != test_set_y[ind]: #Calculate Error - B+ Tree Search 
-                # res = bt.predict(test_set_x[ind])
-                # err += res                
                 res = bt.predict(test_set_x[ind])
-                err += abs(res - test_set_y[ind])
+                err += res                
     '''
            # calculate error
     for ind in range(len(test_set_x)):
