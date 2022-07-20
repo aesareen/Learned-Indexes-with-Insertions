@@ -1,4 +1,4 @@
-from __future__ import print_function
+from __future__ import print_function, division
 import pandas as pd
 from Trained_NN import TrainedNN, AbstractNN, ParameterPool, set_data_type
 from btree import BTree
@@ -6,7 +6,8 @@ from data.create_data import create_data, Distribution
 from random import sample as rsample
 import time, gc, json
 import os, sys, getopt
-import threading
+import multiprocessing as mp
+
 
 
 # Setting 
@@ -46,7 +47,43 @@ useThresholdPool = {
     Distribution.EXPONENTIAL: [True, False],    
 }
 
-# hybrid training structure, 2 stages
+def update_model(threshold, use_threshold, stage_set, core_set, train_step_set, batch_size_set, learning_rate_set,
+                                    keep_ratio_set, remaining_test_set_x, remaining_test_set_y, interval_set, btree):
+    err = 0
+    inserted_num = 0
+    start_time = time.time()
+    print("About to retrain!")
+    new_trained_index = hybrid_training(threshold, use_threshold, stage_set, core_set, train_step_set, batch_size_set, learning_rate_set,
+                                    keep_ratio_set, remaining_test_set_x, remaining_test_set_y, [], [])
+    end_time = time.time()
+    print("Done retraining! It was completed in {st}".format(st=end_time - start_time))
+    for ind in range(len(remaining_test_set_x)):
+        pre1 = new_trained_index[0][0].predict(remaining_test_set_x[ind])
+        if pre1 > stage_set[1] - 1:
+                pre1 = stage_set[1] - 1
+        pre2 = new_trained_index[1][pre1].predict(remaining_test_set_x[ind])
+        err += abs(pre2 - remaining_test_set_y[ind])
+    #     if ind not in interval_set:
+    #         pre1 = new_trained_index[0][0].predict(remaining_test_set_x[ind])
+    #         if pre1 > stage_set[1] - 1:
+    #             pre1 = stage_set[1] - 1
+    #         pre2 = new_trained_index[1][pre1].predict(remaining_test_set_x[ind])
+    #         err += abs(pre2 - remaining_test_set_y[ind])
+    #     else: #Writes 
+    #         remaining_test_set_y[ind]=TOTAL_NUMBER+inserted_num #Change predicted index (Start at number, increment by 1)
+    #         inserted_num +=1
+    #         pre1 = new_trained_index[0][0].predict(remaining_test_set_x[ind])
+    #         if pre1 > stage_set[1] - 1: #RMI - First Model 
+    #             pre1 = stage_set[1] - 1
+    #         pre2 = new_trained_index[1][pre1].predict(remaining_test_set_x[ind])
+    #         if pre2 != remaining_test_set_y[ind]: #Calculate Error - B+ Tree Search 
+    #             res = btree.predict(remaining_test_set_x[ind])
+    #             err += res
+    retrain_err = err * 1.0 / len(remaining_test_set_x)
+    print("Retrained Model Error: {re}".format(re = retrain_err))
+    # Cost-Benefits: Error decrease, throughput, etc...
+
+# hybrid training structure, 2 stages #! Where you left off: Figuring out this mean abs val and how to leverage that
 def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_nums, batch_size_nums, learning_rate_nums,
                     keep_ratio_nums, train_data_x, train_data_y, test_data_x, test_data_y):
     stage_length = len(stage_nums)
@@ -84,7 +121,7 @@ def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_
             index[i][j] = AbstractNN(tmp_index.get_weights(), tmp_index.get_bias(), core_nums[i], tmp_index.cal_err())
             del tmp_index
             gc.collect()
-            if i < stage_length - 1:
+            if i < stage_length - 1: #! Testing Learned Index 
                 # allocate data into training set for models in next stage
                 for ind in range(len(tmp_inputs[i][j])):
                     # pick model in next stage with output of this model
@@ -120,7 +157,8 @@ def train_index(threshold, use_threshold, distribution, path):
     test_set_y = []
 
     set_data_type(distribution)
-    # read parameter
+    
+    # read distribution parameter
     if distribution == Distribution.RANDOM:
         parameter = ParameterPool.RANDOM.value
     elif distribution == Distribution.LOGNORMAL:
@@ -132,6 +170,7 @@ def train_index(threshold, use_threshold, distribution, path):
     else:
         return
     stage_set = parameter.stage_set
+    
     # set number of models for second stage (1 model deal with 10000 records)
     stage_set[1] = int(round(data.shape[0] / 10000))
     core_set = parameter.core_set
@@ -156,7 +195,8 @@ def train_index(threshold, use_threshold, distribution, path):
     #     test_set_x.append(data.ix[i, 0])
     #     test_set_y.append(data.ix[i, 1])
 
-     # build BTree index
+    
+    # build BTree index
     print("*************start BTree************")
     bt = BTree(2)
     print("Start Build")
@@ -168,7 +208,7 @@ def train_index(threshold, use_threshold, distribution, path):
     err = 0
     print("Calculate error")
     start_time = time.time()
-    for ind in range(len(test_set_x)): #! Applying requests to learned index -- Run through every index 
+    for ind in range(len(test_set_x)):
         pre = bt.predict(test_set_x[ind]) #Predict the index 
         err += abs(pre - test_set_y[ind]) #Calculate the error 
         if err != 0:
@@ -187,8 +227,9 @@ def train_index(threshold, use_threshold, distribution, path):
     print("*************end BTree************")
 
     print("*************start Learned NN************")
-    print("Start Train")
+    print("Start Full Train")
     start_time = time.time()
+   
     # train index
     trained_index = hybrid_training(threshold, use_threshold, stage_set, core_set, train_step_set, batch_size_set, learning_rate_set,
                                     keep_ratio_set, train_set_x, train_set_y, [], [])
@@ -196,21 +237,65 @@ def train_index(threshold, use_threshold, distribution, path):
     learn_time = end_time - start_time
     print("Build Learned NN time ", learn_time)
     print("Calculate Error")
-    err = 0
-    start_time = time.time()
-    
+        
     #! Write Percentage Code
     keys_needed = int(TOTAL_NUMBER * write_percent)
     interval = set(rsample(range(TOTAL_NUMBER), keys_needed))
-    
+
     err = 0
     inserted_num = 0
-
+    cold_interval = int(TOTAL_NUMBER * .1)
+    cold_interval_times = []
+    cold_counter = 0
+    cold_start = []
+    print(len(test_set_x))
     start_time = time.time()
 
-    for ind in range(len(test_set_x)):
-        if ind % 100000 == 0:
-            print("Completed index {ind} out of {TN}".format(ind=ind, TN=TOTAL_NUMBER))
+    for ind in range(len(test_set_x) + 1):
+        if not write_percent:
+            if ind % cold_interval == 0:
+                cold_interval_times.append(time.time()) 
+                if len(cold_interval_times) == 2:
+                    val = cold_interval / (cold_interval_times[1]- cold_interval_times[0])
+                    print("{o}%-{t}% throughput: {v} keys/sec".format(
+                        o = ((ind - cold_interval) / TOTAL_NUMBER) * 100,
+                        t = (ind / TOTAL_NUMBER) * 100,
+                        v = val
+                    ))
+                    if cold_counter == 0 or cold_counter == 9:
+                        cold_start.append(val)
+                        if cold_counter == 9:
+                            print("Cold Start: {cold_start_diff}".format(
+                                cold_start_diff = cold_start[0] / cold_start[1]
+                            ))
+                            break
+                    cold_counter += 1
+                    cold_interval_times.pop(0)
+                pre1 = trained_index[0][0].predict(test_set_x[ind])
+                if pre1 > stage_set[1] - 1:
+                    pre1 = stage_set[1] - 1
+                pre2 = trained_index[1][pre1].predict(test_set_x[ind])
+                err += abs(pre2 - test_set_y[ind])
+        else:
+            '''
+                Evaluate the baseline performance (old model)
+                    Evaluate the performance of the first half (25%) of the baseline and the second half (50%)
+                Evaluate the performance of the retrained model on last 50% of the data
+                    When we do the retraining we do it current dataset (100,000 keys: key 50,000 to key 100,000)
+                Doesn't matter if retraining takes longer, just measure the differences (cost + benefit analysis)
+            '''
+            if ind == TOTAL_NUMBER:
+                break
+            if ind % 100000 == 0: #For Writes only
+                print("Completed index {ind} out of {TN}".format(ind=ind, TN=TOTAL_NUMBER))
+            if ind == TOTAL_NUMBER * .25:
+                d25_mean_error = err * 1.0 / (TOTAL_NUMBER * .25)
+            if ind == TOTAL_NUMBER * .5:
+                d50_mean_error = err * 1.0 / (TOTAL_NUMBER * .50)
+                remain_test_x = test_set_x[ind:TOTAL_NUMBER-1]
+                remain_test_y = test_set_y[ind:TOTAL_NUMBER-1]
+                retrained_model = mp.Process(target=update_model, args=(threshold, use_threshold, stage_set, core_set, train_step_set, batch_size_set, learning_rate_set,
+                                            keep_ratio_set, remain_test_x, remain_test_y, interval, bt)).start()
         if ind not in interval:
             pre1 = trained_index[0][0].predict(test_set_x[ind])
             if pre1 > stage_set[1] - 1:
@@ -225,8 +310,10 @@ def train_index(threshold, use_threshold, distribution, path):
                 pre1 = stage_set[1] - 1
             pre2 = trained_index[1][pre1].predict(test_set_x[ind])
             if pre2 != test_set_y[ind]: #Calculate Error - B+ Tree Search 
+                # res = bt.predict(test_set_x[ind])
+                # err += res                
                 res = bt.predict(test_set_x[ind])
-                err += res
+                err += abs(res - test_set_y[ind])
     '''
            # calculate error
     for ind in range(len(test_set_x)):
@@ -240,10 +327,11 @@ def train_index(threshold, use_threshold, distribution, path):
     '''
     end_time = time.time()
     search_time = (end_time - start_time) / len(test_set_x)
-    print("Search time %f " % search_time)
+    print("Average Search time %f " % search_time)
     mean_error = err * 1.0 / len(test_set_x)
-    print("mean error = ", mean_error)
-    print("*************end Learned NN************\n\n")
+    print("Total Training Mean error = ", mean_error)
+    print("*************end Learned Original Model NN************\n\n")
+    
     # write parameter into files
     result_stage1 = {0: {"weights": trained_index[0][0].weights, "bias": trained_index[0][0].bias}}
     result_stage2 = {}
@@ -310,6 +398,7 @@ def train_index(threshold, use_threshold, distribution, path):
     gc.collect()
 
 
+
 # Main function for sample training
 def sample_train(threshold, use_threshold, distribution, training_percent, path):
     data = pd.read_csv(path, header=None)
@@ -358,7 +447,7 @@ def sample_train(threshold, use_threshold, distribution, training_percent, path)
                 train_set_y.append(data.ix[i, 1])
 
     print("*************start Learned NN************")
-    print("Start Train")
+    print("Start Sample Train")
     start_time = time.time()
     trained_index = hybrid_training(threshold, use_threshold, stage_set, core_set, train_step_set, batch_size_set, learning_rate_set,
                                     keep_ratio_set, train_set_x, train_set_y, test_set_x, test_set_y)
@@ -409,6 +498,8 @@ def sample_train(threshold, use_threshold, distribution, training_percent, path)
     del trained_index
     gc.collect()
 
+
+
 # help message
 def show_help_message(msg):
     help_message = {'command': 'python Learned_BTree.py -t <Type> -d <Distribution> [-p|-n] [Percent]|[Number] [-c] [New data] [-h] [-w] [Write Percent]',
@@ -457,10 +548,10 @@ def main(argv):
         
         elif opt == '-t':
             if arg == "sample":
-                is_sample = True
-                is_type = True
+                is_sample = True #Checking if whether to use sample data 
+                is_type = True #Setting to valid type 
             elif arg == "full":
-                is_sample = False
+                is_sample = False 
                 is_type = True
             else:
                 show_help_message('type')
@@ -542,4 +633,4 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    mp.Process(target=main, args=(sys.argv[1:],)).start()

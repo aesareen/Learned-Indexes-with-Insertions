@@ -1,6 +1,7 @@
 # Main file for NN model
 import tensorflow as tf
 import numpy as np
+from multiprocessing import current_process
 from enum import Enum
 from data.create_data import Distribution
 from functools import wraps
@@ -168,7 +169,7 @@ class TrainedNN:
                 err = self.sess.run(self.cross_entropy, feed_dict={self.h_fc_drop[0]: np.array([self.train_x]).T,
                                                                    self.y_: np.array([self.train_y]).T,
                                                                    self.keep_prob: 1.0})
-                print("cross_entropy: %f" % err)
+                print("{name} cross_entropy: {err}".format(err=err, name=current_process().name))
                 if step == 0:
                     last_err = err 
                 # use threhold to stop train 
