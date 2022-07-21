@@ -1,1 +1,1 @@
-{"search time": 6.352333307266235e-05, "build time": 16.486999988555908, "store size": 40748458, "type": "BTree", "average error": 150.00178333333332}
+{"search time": 0.00013121333360671997, "build time": 21.621999979019165, "store size": 40748565, "type": "BTree", "average error": 0.26893666666666666}
